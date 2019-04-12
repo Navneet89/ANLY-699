@@ -1,0 +1,434 @@
+---
+title: "final submission"
+author: "Navneet Dhull"
+date: "April 4, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r libraries}
+library(plyr)
+library(dplyr)
+library(corrplot)
+library(plotly)
+library(ggplot2)
+library(e1071)
+library(DT)
+library(data.table)
+library(tidyverse)
+library(xgboost)
+library(readxl)
+library(gridExtra)
+library(caret)
+library(matrixStats)
+library(zoo)
+library(stringr)
+library(lubridate)
+library(factoextra)
+library(pROC)
+```
+
+```{r data prep}
+atr_fin <- read.csv("~/application_train_final.csv")
+atr_fin <-as.data.frame(atr_fin)
+atr_fin$DAYS_EMPLOYED <- replace(atr_fin$DAYS_EMPLOYED,atr_fin$DAYS_EMPLOYED == 365243, NA)
+dim(atr_fin)
+table(atr_fin$TARGET)
+
+# columns dropped after careful consideration
+drop <- c("APARTMENTS_AVG", "BASEMENTAREA_AVG", "YEARS_BEGINEXPLUATATION_AVG", "ELEVATORS_AVG", "ENTRANCES_AVG", "FLOORSMAX_AVG", "LANDAREA_AVG", "LIVINGAREA_AVG", "NONLIVINGAREA_AVG", "APARTMENTS_MEDI", "APARTMENTS_MODE", "BASEMENTAREA_MODE", "YEARS_BEGINEXPLUATATION_MODE", "ELEVATORS_MODE", "ENTRANCES_MODE", "FLOORSMAX_MODE", "LANDAREA_MODE", "LIVINGAREA_MODE", "NONLIVINGAREA_MODE", "BASEMENTAREA_MEDI", "YEARS_BEGINEXPLUATATION_MEDI", "ELEVATORS_MEDI", "ENTRANCES_MEDI", "FLOORSMAX_MEDI", "LANDAREA_MEDI", "LIVINGAREA_MEDI", "NONLIVINGAREA_MEDI", "TOTALAREA_MODE", "YEARS_BEGINEXPLUATATION_MODE", "FLOORSMIN_AVG", "WALLSMATERIAL", "NONLIVINGAPARTMENTS_AVG", "LIVINGAPARTMENTS_MODE", "FLOORSMIN_MEDI", "YEARS_BUILD_MODE", "NONLIVINGAPARTMENTS_MODE", "COMMONAREA_AVG", "LIVINGAPARTMENTS_MEDI","LIVINGAPARTMENTS_AVG", "Avg_Pay_Ratio", "COMMONAREA_MEDI", "YEARS_BUILD_AVG", "COMMONAREA_MODE",  "FLOORSMIN_MODE", "YEARS_BUILD_MEDI", "NONLIVINGAPARTMENTS_MEDI")
+atr_1 = atr_fin[,!(names(atr_fin) %in% drop)]
+dim(atr_1)
+
+```
+```{r plot}
+plot(atr_fin$TARGET, atr_fin$AMT_CREDIT, xlab="Type of Applicant", ylab="Credit Amount", main="Figure 1: Credit Amount for Applicants")
+plot(atr_fin$TARGET, atr_fin$EXT_SOURCE_2, xlab="Type of Applicant", ylab="Credit Rating", main="Figure 2: Credit Rating for Applicants")
+plot(atr_fin$TARGET, atr_fin$TOTAL.DPD.1.30, xlab="Type of Applicant", ylab="Credit Rating", main="Figure 3: No. of delinquent accounts(30+) for Applicants")
+plot(atr_fin$TARGET, atr_fin$TOTAL_CURRENT_AMT_OVERDUE,  xlab="Type of Applicant", ylab="Total current amount overdue", main="Figure 4: Total amount overdue for Applicants" )
+
+```
+
+
+
+
+```{r missing values}
+# Columns with missing values greater than 80% are dropped
+colnames(atr_1[, colMeans(is.na(atr_1))>=.80])
+drop1 <- c("TOTAL.DPD.1.30", "TOTAL.DPD.120..or.Written.off", "TOTAL.DPD.31.60", "TOTAL.DPD.61.90", "TOTAL.DPD.91.120" )
+atr_2 = atr_1[,!(names(atr_1) %in% drop1)]
+dim(atr_2)
+
+```
+
+```{r collinearity}
+# Collinearity_ dropping variables with high correlation
+atr_2.1 <-subset(Filter(is.numeric, atr_2))
+cat_columns <- setdiff(colnames(atr_2),colnames(atr_2.1))
+cat_columns
+
+atr_2.2 <- replace(atr_2.1, TRUE, lapply(atr_2.1, na.aggregate))
+
+colSums(is.na(atr_2.2)) 
+
+df_corr = cor(atr_2.2, use = "pairwise.complete.obs")
+hc = findCorrelation(df_corr, cutoff=0.80)
+hc = sort(hc)
+atr_2.3 = as.data.frame(atr_2.2)[,-c(hc)]
+
+rm_col_hc <- setdiff(colnames(atr_2.2),colnames(atr_2.3))
+rm_col_hc
+
+drop3 <-c("AMT_GOODS_PRICE", "CNT_FAM_MEMBERS", "REGION_RATING_CLIENT_W_CITY", "REG_REGION_NOT_WORK_REGION" ,"REG_CITY_NOT_WORK_CITY", "DEF_30_CNT_SOCIAL_CIRCLE","OBS_60_CNT_SOCIAL_CIRCLE", "TOTAL_PREVIOUS_CREDITS", "Closed" )
+atr_2.5 = atr_2.2[,!(names(atr_2.2) %in% drop3)]
+View(atr_2.5)
+dim(atr_2.5)
+
+# number of variables is reduced to 84
+```
+
+
+```{r full model}
+## running the initial model to find out significant variables
+model <- glm(TARGET ~., data = atr_2.5) 
+summary(model) #AIC : 
+
+drop4  <- c("SK_ID_CURR", "CNT_CHILDREN", "AMT_INCOME_TOTAL", "FLAG_MOBIL", "FLAG_CONT_MOBILE", "LIVE_REGION_NOT_WORK_REGION", "OBS_30_CNT_SOCIAL_CIRCLE", "FLAG_DOCUMENT_4", "FLAG_DOCUMENT_7", "FLAG_DOCUMENT_10", "FLAG_DOCUMENT_12", "FLAG_DOCUMENT_19", "FLAG_DOCUMENT_20", "FLAG_DOCUMENT_21", "AMT_REQ_CREDIT_BUREAU_HOUR", "AMT_REQ_CREDIT_BUREAU_MON", "MAX_AMT_OVERDUE","TOTAL_CREDIT_PROLONG", "TOTAL_CURRENT_CREDIT_AMOUNT", "Bad.debt", "Cash.loan..non.earmarked.", "Interbank.credit", "Loan.for.purchase.of.shares..margin.lending.", "Loan.for.working.capital.replenishment", "Mobile.operator.loan", "Real.estate.loan", "Unknown.type.of.loan") 
+
+atr_3 =atr_2.5[,!names(atr_2.5)%in% drop4]
+dim(atr_3)
+```
+
+
+
+```{r randomization}
+set.seed(1234)
+atr_3_filt_rand <- atr_3[order(runif(307511)), ]
+atr_3_filt_rand_1 <- subset(atr_3_filt_rand, TARGET == 1)
+atr_3_filt_rand_2 <- subset(atr_3_filt_rand, TARGET == 0)
+atr_3_filt_rand_1 <- atr_3_filt_rand_1[order(runif(24000)),]
+atr_3_filt_rand_2 <- atr_3_filt_rand_2[order(runif(51000)), ]
+atr_3_filt_rand_3 <- rbind(atr_3_filt_rand_1,atr_3_filt_rand_2)
+atr_4 <- atr_3_filt_rand_3[order(runif(75000)),] #sample for initial model
+
+
+atr_4$FLAG_PHONE <-as.factor(atr_4$FLAG_PHONE)
+atr_4$REGION_RATING_CLIENT<-as.factor(atr_4$REGION_RATING_CLIENT)
+atr_4$REG_REGION_NOT_LIVE_REGION<-as.factor(atr_4$REG_REGION_NOT_LIVE_REGION)
+atr_4$REG_CITY_NOT_LIVE_CITY<-as.factor(atr_4$REG_CITY_NOT_LIVE_CITY)
+atr_4$FLAG_DOCUMENT_3<-as.factor(atr_4$FLAG_DOCUMENT_3)
+atr_4$FLAG_DOCUMENT_5<-as.factor(atr_4$FLAG_DOCUMENT_5)
+atr_4$FLAG_DOCUMENT_6<-as.factor(atr_4$FLAG_DOCUMENT_6)
+atr_4$FLAG_DOCUMENT_8<-as.factor(atr_4$FLAG_DOCUMENT_8)
+atr_4$FLAG_DOCUMENT_13<-as.factor(atr_4$FLAG_DOCUMENT_13)
+atr_4$FLAG_DOCUMENT_14<-as.factor(atr_4$FLAG_DOCUMENT_14)
+atr_4$FLAG_DOCUMENT_15<-as.factor(atr_4$FLAG_DOCUMENT_15)
+atr_4$FLAG_DOCUMENT_16<-as.factor(atr_4$FLAG_DOCUMENT_16)
+atr_4$FLAG_DOCUMENT_18<-as.factor(atr_4$FLAG_DOCUMENT_18)
+
+#running the model before cross validation
+atr_train<-atr_4[1:60000,]
+atr_test<-atr_4[60001:75000,]
+prop.table(table(atr_train$TARGET))
+prop.table(table(atr_test$TARGET))
+
+
+model2 <- glm(TARGET ~.,  data = atr_train, family=binomial()) 
+summary(model2) #AIC= 65727
+
+# predicting the model accuracy
+glm_pre <- table(predict(model2, newdata=atr_test))
+tab <- table(glm_pre, atr_test$TARGET)
+if(nrow(tab)!=ncol(tab)){
+    missings <- setdiff(colnames(tab),rownames(tab))
+    missing_mat <- mat.or.vec(nr = length(missings), nc = ncol(tab))
+    tab  <- as.table(rbind(as.matrix(tab), missing_mat))
+    rownames(tab) <- colnames(tab)
+}
+conf_mat1<- confusionMatrix(tab)
+conf_mat1
+
+drop5 <-c("REGION_POPULATION_RELATIVE", "HOUR_APPR_PROCESS_START", "FLAG_DOCUMENT_9", "FLAG_DOCUMENT_11", "AMT_REQ_CREDIT_BUREAU_WEEK", "Another.type.of.loan", "Loan.for.business.development", "Loan.for.the.purchase.of.equipment", "Avg_Instalment_Value")
+atr_5 =atr_3[,!names(atr_3)%in% drop5]
+dim(atr_5)
+
+```
+
+```{r partition and cross validation using glm}
+
+atr_5$TARGET <-as.factor(atr_5$TARGET)
+levels(atr_5$TARGET) <-c("No", "Yes")
+
+dim(atr_5)
+partitionRule <-createDataPartition(atr_5$TARGET, p=0.7, list=F)
+
+imtrainingSet <-atr_5[partitionRule,]
+imtestingSet <-atr_5[-partitionRule,]
+length(which(imtrainingSet$TARGET=="Yes"))
+length(which(imtrainingSet$TARGET=="No"))
+
+trainingSet <-downSample(x=imtrainingSet[,-ncol(imtrainingSet)], y=imtrainingSet$TARGET)
+length(which(trainingSet$TARGET=="Yes"))
+length(which(trainingSet$TARGET=="No"))
+splitRule<-trainControl(method="repeatedcv", number=10, repeats = 2, classProbs = T, summaryFunction = twoClassSummary)
+
+#glm model
+
+glmmodel <-train(TARGET~.,data=trainingSet, trControl=splitRule, method='glm',preProc=c("center", "scale"), metric="ROC")
+glmTest <-predict(glmmodel, newdata=imtestingSet)
+tab2 <- table(glmTest, testingSet$TARGET)
+if(nrow(tab)!=ncol(tab2)){
+    missings <- setdiff(colnames(tab2),rownames(tab2))
+    missing_mat <- mat.or.vec(nr = length(missings), nc = ncol(tab2))
+    tab2  <- as.table(rbind(as.matrix(tab2), missing_mat))
+    rownames(tab2) <- colnames(tab2)
+}
+
+conf_mat2 <-confusionMatrix(tab2)
+conf_mat2
+```
+
+
+```{r, iterations on full dataset}
+atr_5.1 <- atr_5[order(runif(307511)), ]
+model3 <- glm(TARGET ~., family = binomial(link = 'logit'), data = atr_5.1)
+summary(model3)
+
+atr_5.2 <- atr_5.1[1:60000,]
+TestProb1 <- predict(model3, newdata = atr_5.1, type = 'response')
+TestProb1[1:10]
+TestPred1 <- ifelse(TestProb1 > 0.5, "1", "0")
+(p <- table(TestPred1, atr_5.1$TARGET))
+(Accuracy1 <- sum(diag(p))/sum(p)*100)
+
+atr_5.3 <- atr_5.1[60001:120000,]
+TestProb2 <- predict(model3, atr_5.3)
+TestPred2 <- ifelse(TestProb2 > 0.5, "1", "0")
+(p <- table(TestPred2, atr_5.3$TARGET))
+(Accuracy2 <- sum(diag(p))/sum(p)*100)
+
+atr_5.4 <- atr_5.1[120001:180000,]
+TestProb3 <- predict(model3, newdata = atr_5.4)
+TestPred3 <- ifelse(TestProb3 > 0.5, "1", "0")
+(p <- table(TestPred3, atr_5.4$TARGET))
+(Accuracy3 <- sum(diag(p))/sum(p)*100)
+
+atr_5.5 <- atr_5.1[180001:240000,]
+TestProb4 <- predict(model3, newdata = atr_5.5)
+TestPred4 <- ifelse(TestProb4 > 0.5, "1", "0")
+(p <- table(TestPred4, atr_5.5$TARGET))
+(Accuracy4 <- sum(diag(p))/sum(p)*100)
+
+atr_5.6 <- atr_5.1[240001:307511,]
+TestProb5 <- predict(model3, newdata = atr_5.6)
+TestPred5 <- ifelse(TestProb5 > 0.5, "1", "0")
+(p <- table(TestPred5, atr_5.6$TARGET))
+(Accuracy5 <- sum(diag(p))/sum(p)*100)
+
+Accuracy1
+Accuracy2
+Accuracy3
+Accuracy4
+Accuracy5
+
+```
+
+```{r roc}
+#Total Data
+TestProb <- predict(model3, newdata = atr_5.1, type = 'response')
+TestProb[1:10]
+TestPred <- ifelse(TestProb > 0.5, "1", "0")
+(p <- table(TestPred, atr_5.1$TARGET))
+(Accuracy <- sum(diag(p))/sum(p)*100)
+
+(Sensitivity = 282446/(282446+240))
+(Specificity = 247/(24578 + 247))
+(Precision = 282446/(282446 + 247))
+(F1score = 2/((1/Precision) + (1/Sensitivity)))
+
+#ROCR
+pred <- prediction(TestProb, atr_5.1$TARGET)
+
+roc <- performance(pred, "tpr", "fpr") 
+plot(roc, col="blue", lwd=3, main="Figure 5: Predicting Defaulters")
+abline(a=0, b=1)
+
+auc <- performance(pred, "auc")
+unlist(slot(auc, "y.values"))
+
+
+
+```
+
+
+```{r plots prep}
+#Function to change index to column
+index_to_col <- function(atr_5, Column_Name){
+          data <- cbind(newColName = rownames(data), data)
+          rownames(data) <- 1:nrow(data)
+          colnames(data)[1] <- Column_Name
+          return (data)
+        }
+
+#Loading all the plotting functions
+plotHist <- function(data_in, i) {
+  data <- data.frame(x=data_in[[i]])
+  p <- ggplot(data=data, aes(x=x)) + geom_histogram(bins=100, fill="#0072B2", alpha = .9) + xlab(colnames(data_in)[i]) + theme_light() + 
+    theme(axis.text.x = element_text(angle = 90, hjust =1))
+  return (p)
+}
+  
+plotBar <- function(data_in, i) {
+  data <- data.frame(cbind(x=data_in[[i]],y=dt1_tran[,c("TARGET")]))
+   data %>%
+   mutate(x = x,
+          class = as.character(y.TARGET)) %>%
+   group_by(x, class) %>%
+   summarise(count_class = n()) %>%
+   group_by(x) %>%
+   mutate(count_man = sum(count_class)) %>%
+   mutate(percent = count_class / count_man * 100) %>%
+   ungroup()  %>%
+    ggplot(aes(x = x,
+             y = percent,
+             group = class)) +
+    geom_bar(aes(fill = class, color=class), 
+           stat = "identity") +
+    geom_text(aes(label = sprintf("%0.1f%%", percent)),
+            position = position_stack(vjust = 0.5)) + theme_light() + theme_light() + 
+    theme(axis.text.x = element_text(angle = 90, hjust =1))+ theme(legend.position='none')
+   
+}
+
+plotCorr <- function(data_in, list1,list2,i){
+  data <- data.frame(x = data_in[[list1[i]]], y = data_in[[list2[i]]])
+  p <- ggplot(data, aes(x = x, y = y)) + geom_smooth(method = lm ) + geom_point(aes(x = x, y = y)) +
+  geom_jitter(width = 0.1, height = 0.1)  + xlab(paste0(list1[i], '\n', 'R-Squared: ', round(cor(data_in[[list1[i]]], data_in[[list2[i]]], use = 'pairwise.complete.obs'), 3))) + theme_light() + ylab(paste0(list2[i]))
+  return(suppressWarnings(p))
+}
+
+doPlotsCorr <- function(data_in, fun, list1,list2,ii, ncol=3) {
+  pp <- list()
+  for (i in ii) {
+    p <- fun(data_in=data_in, list1,list2,i=i)
+    pp <- c(pp, list(p))
+  }
+  do.call("grid.arrange", c(pp, ncol=ncol))
+}
+plotDen <- function(data_in, i) {
+  data <- data.frame(x=data_in[[i]])
+  p <- ggplot(data=data, aes(x=x)) + geom_density(aes(group=as.factor(dt1_tran$TARGET),color=as.factor(dt1_tran$TARGET),fill=as.factor(dt1_tran$TARGET), alpha=0.2)) + xlab(colnames(data_in)[i]) + theme_light() + 
+    theme(axis.text.x = element_text(angle = 90, hjust =1)) + theme(legend.position='none')
+  return (p)
+}
+
+doPlots <- function(data_in, fun, ii, ncol=3) {
+  pp <- list()
+  for (i in ii) {
+    p <- fun(data_in=data_in, i=i)
+    pp <- c(pp, list(p))
+  }
+  do.call("grid.arrange", c(pp, ncol=ncol))
+}
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+
+```{r }
+atr_6 <-scale(atr_5, center = TRUE, scale = TRUE)
+pr1 <-prcomp(atr_6)
+summary(pr1)
+
+regexp <- "[[:digit:]]+"
+pcaObject <- prcomp(atr_6,  scale = TRUE, center = TRUE)
+eig_tb <- cbind(Dimensions = rownames(get_eig(pcaObject)), get_eig(pcaObject))
+ts <- setDT(eig_tb)[cumulative.variance.percent > 80][1,1]
+ts <- str_extract(as.character(ts[[1]]), regexp)
+ts
+
+n <- as.numeric(ts)
+col_list <- list()
+for (i in 1:n){ 
+ col_list[i]<-paste('rotation.PC',i, sep="") 
+} 
+
+pca_df <- as.data.frame(pcaObject[2])
+pca_df <- pca_df[,colnames(pca_df) %in% col_list]
+pca_df <- cbind(Features = rownames(pca_df), pca_df)
+pca_df
+
+pca_df <- setDT(pca_df)[order(rotation.PC1, decreasing = TRUE)]
+fviz_eig(pcaObject)
+
+
+
+```
+
+
+
+```{r extra}
+
+# Remaining Columns with only numeric data and missing values replaced with mean
+atr_3.1 <-subset(Filter(is.numeric, atr_3))
+atr_3.2 <- replace(atr_3.1, TRUE, lapply(atr_3.1, na.aggregate))
+
+# Check if there are any columns with NAs
+colSums(is.na(atr_3.2)) ## no numeric columns with missing values
+
+drop2<-c("AMT_INCOME_TOTAL", "DAYS_BIRTH", "FLAG_CONT_MOBILE","HOUR_APPR_PROCESS_START", "REG_REGION_NOT_WORK_REGION", "REG_CITY_NOT_WORK_CITY","OBS_30_CNT_SOCIAL_CIRCLE", "OBS_60_CNT_SOCIAL_CIRCLE", "FLAG_DOCUMENT_4", "FLAG_DOCUMENT_7", "FLAG_DOCUMENT_10", "FLAG_DOCUMENT_12", "FLAG_DOCUMENT_9", "FLAG_DOCUMENT_17", "FLAG_DOCUMENT_19", "FLAG_DOCUMENT_20", "FLAG_DOCUMENT_21", "AMT_REQ_CREDIT_BUREAU_HOUR", "AMT_REQ_CREDIT_BUREAU_MON","MAX_AMT_OVERDUE", "TOTAL_CREDIT_PROLONG", "TOTAL_CURRENT_CREDIT_AMOUNT","Bad.debt","Sold")
+atr_4 = atr_3[,!(names(atr_3) %in% drop2)]
+
+atr_5.1<-subset(Filter(is.numeric,atr_5))
+atr_5.2 <- replace(atr_5.1, TRUE, lapply(atr_5.1, na.aggregate))
+(sum(is.na(atr_5.2)))
+
+# replacing categorical missing values by median
+atr_5.3<-subset(Filter(is.factor, atr_5))
+atr_5.4 <-replace(atr_5.3, TRUE, lapply(atr_5.3, na.aggregate))
+sum(is.na(atr_5.4))
+View(atr_5.4)
+
+atr_6<-cbind(atr_5.4, atr_5.2)
+```
+
+```{r categorical to factors}
+## Converting categorical variables to factors
+atr_3$NAME_CONTRACT_TYPE<-as.factor(atr_3$NAME_CONTRACT_TYPE)
+atr_3$CODE_GENDER<-as.factor(atr_3$CODE_GENDER)
+atr_3$FLAG_OWN_CAR<-as.factor(atr_3$FLAG_OWN_CAR)
+atr_3$NAME_TYPE_SUITE<-as.factor(atr_3$NAME_TYPE_SUITE)
+atr_3$FLAG_PHONE <-as.factor(atr_3$FLAG_PHONE)
+atr_3$OCCUPATION_TYPE<-as.factor(atr_3$OCCUPATION_TYPE)
+atr_3$REGION_RATING_CLIENT<-as.factor(atr_3$REGION_RATING_CLIENT)
+atr_3$REG_REGION_NOT_LIVE_REGION<-as.factor(atr_3$REG_REGION_NOT_LIVE_REGION)
+atr_3$REG_CITY_NOT_LIVE_CITY<-as.factor(atr_3$REG_CITY_NOT_LIVE_CITY)
+atr_3$REG_CITY_NOT_WORK_CITY<-as.factor(atr_3$REG_CITY_NOT_WORK_CITY)
+atr_3$ORGANIZATION_TYPE<-as.factor(atr_3$ORGANIZATION_TYPE)
+atr_3$DEF_30_CNT_SOCIAL_CIRCLE<-as.factor(atr_3$DEF_30_CNT_SOCIAL_CIRCLE)
+atr_3$FLAG_DOCUMENT_3<-as.factor(atr_3$FLAG_DOCUMENT_3)
+atr_3$FLAG_DOCUMENT_5<-as.factor(atr_3$FLAG_DOCUMENT_5)
+atr_3$FLAG_DOCUMENT_6<-as.factor(atr_3$FLAG_DOCUMENT_6)
+atr_3$FLAG_DOCUMENT_8<-as.factor(atr_3$FLAG_DOCUMENT_8)
+atr_3$FLAG_DOCUMENT_16<-as.factor(atr_3$FLAG_DOCUMENT_16)
+atr_3$FLAG_DOCUMENT_18<-as.factor(atr_3$FLAG_DOCUMENT_18)
+
+colnames(atr_1[, colMeans(is.na(atr_1))>=.70])
+drop1 <- c("OWN_CAR_AGE","LIVINGAPARTMENTS_AVG","FLOORSMIN_MODE","COMMONAREA_MEDI","TOTAL.DPD.1.30","TOTAL.DPD.120..or.Written.off","YEARS_BUILD_AVG","NONLIVINGAPARTMENTS_AVG","LIVINGAPARTMENTS_MODE","FLOORSMIN_MEDI","TOTAL.DPD.31.60","COMMONAREA_AVG", "YEARS_BUILD_MODE","NONLIVINGAPARTMENTS_MODE" , "LIVINGAPARTMENTS_MEDI","TOTAL.DPD.61.90","FLOORSMIN_AVG" ,"COMMONAREA_MODE","YEARS_BUILD_MEDI","NONLIVINGAPARTMENTS_MEDI", "TOTAL.DPD.91.120" )
+
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
