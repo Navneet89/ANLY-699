@@ -11,9 +11,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
 ```{r libraries}
 library(plyr)
@@ -373,62 +370,8 @@ pca_df
 pca_df <- setDT(pca_df)[order(rotation.PC1, decreasing = TRUE)]
 fviz_eig(pcaObject)
 
-
-
 ```
 
 
 
-```{r extra}
 
-# Remaining Columns with only numeric data and missing values replaced with mean
-atr_3.1 <-subset(Filter(is.numeric, atr_3))
-atr_3.2 <- replace(atr_3.1, TRUE, lapply(atr_3.1, na.aggregate))
-
-# Check if there are any columns with NAs
-colSums(is.na(atr_3.2)) ## no numeric columns with missing values
-
-drop2<-c("AMT_INCOME_TOTAL", "DAYS_BIRTH", "FLAG_CONT_MOBILE","HOUR_APPR_PROCESS_START", "REG_REGION_NOT_WORK_REGION", "REG_CITY_NOT_WORK_CITY","OBS_30_CNT_SOCIAL_CIRCLE", "OBS_60_CNT_SOCIAL_CIRCLE", "FLAG_DOCUMENT_4", "FLAG_DOCUMENT_7", "FLAG_DOCUMENT_10", "FLAG_DOCUMENT_12", "FLAG_DOCUMENT_9", "FLAG_DOCUMENT_17", "FLAG_DOCUMENT_19", "FLAG_DOCUMENT_20", "FLAG_DOCUMENT_21", "AMT_REQ_CREDIT_BUREAU_HOUR", "AMT_REQ_CREDIT_BUREAU_MON","MAX_AMT_OVERDUE", "TOTAL_CREDIT_PROLONG", "TOTAL_CURRENT_CREDIT_AMOUNT","Bad.debt","Sold")
-atr_4 = atr_3[,!(names(atr_3) %in% drop2)]
-
-atr_5.1<-subset(Filter(is.numeric,atr_5))
-atr_5.2 <- replace(atr_5.1, TRUE, lapply(atr_5.1, na.aggregate))
-(sum(is.na(atr_5.2)))
-
-# replacing categorical missing values by median
-atr_5.3<-subset(Filter(is.factor, atr_5))
-atr_5.4 <-replace(atr_5.3, TRUE, lapply(atr_5.3, na.aggregate))
-sum(is.na(atr_5.4))
-View(atr_5.4)
-
-atr_6<-cbind(atr_5.4, atr_5.2)
-```
-
-```{r categorical to factors}
-## Converting categorical variables to factors
-atr_3$NAME_CONTRACT_TYPE<-as.factor(atr_3$NAME_CONTRACT_TYPE)
-atr_3$CODE_GENDER<-as.factor(atr_3$CODE_GENDER)
-atr_3$FLAG_OWN_CAR<-as.factor(atr_3$FLAG_OWN_CAR)
-atr_3$NAME_TYPE_SUITE<-as.factor(atr_3$NAME_TYPE_SUITE)
-atr_3$FLAG_PHONE <-as.factor(atr_3$FLAG_PHONE)
-atr_3$OCCUPATION_TYPE<-as.factor(atr_3$OCCUPATION_TYPE)
-atr_3$REGION_RATING_CLIENT<-as.factor(atr_3$REGION_RATING_CLIENT)
-atr_3$REG_REGION_NOT_LIVE_REGION<-as.factor(atr_3$REG_REGION_NOT_LIVE_REGION)
-atr_3$REG_CITY_NOT_LIVE_CITY<-as.factor(atr_3$REG_CITY_NOT_LIVE_CITY)
-atr_3$REG_CITY_NOT_WORK_CITY<-as.factor(atr_3$REG_CITY_NOT_WORK_CITY)
-atr_3$ORGANIZATION_TYPE<-as.factor(atr_3$ORGANIZATION_TYPE)
-atr_3$DEF_30_CNT_SOCIAL_CIRCLE<-as.factor(atr_3$DEF_30_CNT_SOCIAL_CIRCLE)
-atr_3$FLAG_DOCUMENT_3<-as.factor(atr_3$FLAG_DOCUMENT_3)
-atr_3$FLAG_DOCUMENT_5<-as.factor(atr_3$FLAG_DOCUMENT_5)
-atr_3$FLAG_DOCUMENT_6<-as.factor(atr_3$FLAG_DOCUMENT_6)
-atr_3$FLAG_DOCUMENT_8<-as.factor(atr_3$FLAG_DOCUMENT_8)
-atr_3$FLAG_DOCUMENT_16<-as.factor(atr_3$FLAG_DOCUMENT_16)
-atr_3$FLAG_DOCUMENT_18<-as.factor(atr_3$FLAG_DOCUMENT_18)
-
-colnames(atr_1[, colMeans(is.na(atr_1))>=.70])
-drop1 <- c("OWN_CAR_AGE","LIVINGAPARTMENTS_AVG","FLOORSMIN_MODE","COMMONAREA_MEDI","TOTAL.DPD.1.30","TOTAL.DPD.120..or.Written.off","YEARS_BUILD_AVG","NONLIVINGAPARTMENTS_AVG","LIVINGAPARTMENTS_MODE","FLOORSMIN_MEDI","TOTAL.DPD.31.60","COMMONAREA_AVG", "YEARS_BUILD_MODE","NONLIVINGAPARTMENTS_MODE" , "LIVINGAPARTMENTS_MEDI","TOTAL.DPD.61.90","FLOORSMIN_AVG" ,"COMMONAREA_MODE","YEARS_BUILD_MEDI","NONLIVINGAPARTMENTS_MEDI", "TOTAL.DPD.91.120" )
-
-```
-
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
