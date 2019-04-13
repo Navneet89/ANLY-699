@@ -172,7 +172,7 @@ dim(atr_5)
 partitionRule <-createDataPartition(atr_5$TARGET, p=0.7, list=F)
 
 imtrainingSet <-atr_5[partitionRule,]
-imtestingSet <-atr_5[-partitionRule,]
+testingSet <-atr_5[-partitionRule,]
 length(which(imtrainingSet$TARGET=="Yes"))
 length(which(imtrainingSet$TARGET=="No"))
 
